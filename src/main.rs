@@ -1,4 +1,7 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::PathBuf,
+};
 
 use clap::Parser;
 use ferrocache::server::{run, ServerConfig};
@@ -13,6 +16,9 @@ struct Args {
 
     #[arg(short, long, default_value_t = 6379)]
     port: u16,
+
+    #[arg(long, value_name = "PATH")]
+    append_only: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -25,5 +31,9 @@ async fn main() -> std::io::Result<()> {
     let args = Args::parse();
     let addr = SocketAddr::new(args.host, args.port);
 
-    run(ServerConfig { addr }).await
+    run(ServerConfig {
+        addr,
+        append_only: args.append_only,
+    })
+    .await
 }

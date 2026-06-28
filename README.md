@@ -21,12 +21,12 @@ Supported today:
 | `DEL` | `DEL name other` | Returns deleted key count |
 | `EXISTS` | `EXISTS name other` | Returns existing key count |
 | `EXPIRE` | `EXPIRE name 30` | Sets a TTL in seconds |
+| `EXPIREAT` | `EXPIREAT name 1780000000` | Sets an absolute Unix timestamp expiration |
 | `TTL` | `TTL name` | Returns remaining TTL, `-1`, or `-2` |
 | `PERSIST` | `PERSIST name` | Removes a key expiration |
 
 Planned next:
 
-- append-only persistence
 - lists with `LPUSH`, `RPUSH`, `LPOP`, and `LRANGE`
 - basic benchmarks
 - pub/sub as a stretch goal
@@ -37,6 +37,12 @@ Run the server:
 
 ```bash
 cargo run -- --host 127.0.0.1 --port 6379
+```
+
+Run with append-only persistence:
+
+```bash
+cargo run -- --append-only data/ferrocache.aof
 ```
 
 Use it with `redis-cli`:
@@ -73,7 +79,8 @@ beyond syntax and build something systems-oriented:
 - protocol parsing and encoding
 - binary-safe values
 - shared state with `Arc` and `RwLock`
-- expiration metadata with `Instant`
+- expiration metadata with `SystemTime`
+- append-only persistence and replay
 - command dispatch through enums and pattern matching
 - explicit error handling with `Result`
 - testable module boundaries
@@ -136,7 +143,7 @@ RUST_LOG=ferrocache=debug cargo run
 ### 0.2
 
 - expiration metadata
-- `EXPIRE`, `TTL`, `PERSIST`
+- `EXPIRE`, `EXPIREAT`, `TTL`, `PERSIST`
 - lazy expiration on access
 - background cleanup task
 
@@ -144,7 +151,7 @@ RUST_LOG=ferrocache=debug cargo run
 
 - append-only file persistence
 - replay on startup
-- safe fsync configuration
+- RESP command serialization for durable mutations
 
 ### 0.4
 

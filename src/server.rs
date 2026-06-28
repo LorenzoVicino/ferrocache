@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use tokio::{
     io::BufReader,
@@ -9,18 +9,31 @@ use tracing::{debug, error, info};
 
 use crate::{
     command::Command,
+    persistence::Aof,
     protocol::{read_frame, write_frame, Frame},
     storage::MemoryStore,
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct ServerConfig {
     pub addr: SocketAddr,
+    pub append_only: Option<PathBuf>,
 }
 
 pub async fn run(config: ServerConfig) -> std::io::Result<()> {
-    let listener = TcpListener::bind(config.addr).await?;
     let store = Arc::new(MemoryStore::new());
+    let aof = match &config.append_only {
+        Some(path) => {
+            let replayed = Aof::replay(path, Arc::clone(&store)).await?;
+            let aof = Arc::new(Aof::open(path).await?);
+
+            info!(path = %path.display(), replayed, "append-only file loaded");
+
+            Some(aof)
+        }
+        None => None,
+    };
+    let listener = TcpListener::bind(config.addr).await?;
 
     spawn_expiration_cleanup(Arc::clone(&store));
 
@@ -29,22 +42,33 @@ pub async fn run(config: ServerConfig) -> std::io::Result<()> {
     loop {
         let (stream, peer_addr) = listener.accept().await?;
         let store = Arc::clone(&store);
+        let aof = aof.clone();
 
         tokio::spawn(async move {
-            if let Err(error) = handle_connection(stream, store).await {
+            if let Err(error) = handle_connection(stream, store, aof).await {
                 debug!(%peer_addr, %error, "connection closed with error");
             }
         });
     }
 }
 
-async fn handle_connection(stream: TcpStream, store: Arc<MemoryStore>) -> std::io::Result<()> {
+async fn handle_connection(
+    stream: TcpStream,
+    store: Arc<MemoryStore>,
+    aof: Option<Arc<Aof>>,
+) -> std::io::Result<()> {
     let (read_half, mut write_half) = stream.into_split();
     let mut reader = BufReader::new(read_half);
 
     while let Some(frame) = read_frame(&mut reader).await? {
         let response = match Command::from_frame(frame) {
-            Ok(command) => command.execute(Arc::clone(&store)).await,
+            Ok(command) => match append_command(&aof, &command).await {
+                Ok(()) => command.execute(Arc::clone(&store)).await,
+                Err(error) => {
+                    error!(%error, "failed to append command to AOF");
+                    Frame::Error("ERR failed to persist command".to_string())
+                }
+            },
             Err(error) => {
                 error!(%error, "command failed");
                 Frame::Error(format!("ERR {error}"))
@@ -55,6 +79,18 @@ async fn handle_connection(stream: TcpStream, store: Arc<MemoryStore>) -> std::i
     }
 
     Ok(())
+}
+
+async fn append_command(aof: &Option<Arc<Aof>>, command: &Command) -> std::io::Result<()> {
+    let Some(aof) = aof else {
+        return Ok(());
+    };
+
+    let Some(frame) = command.to_aof_frame() else {
+        return Ok(());
+    };
+
+    aof.append(&frame).await
 }
 
 fn spawn_expiration_cleanup(store: Arc<MemoryStore>) {

@@ -3,6 +3,7 @@ target/
 .env.*
 !.env.example
 *.log
+*.aof
 *.tmp
 *.swp
 .DS_Store

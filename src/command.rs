@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use thiserror::Error;
 
@@ -31,6 +34,7 @@ pub enum Command {
     Del { keys: Vec<String> },
     Exists { keys: Vec<String> },
     Expire { key: String, seconds: u64 },
+    ExpireAt { key: String, unix_seconds: u64 },
     Ttl { key: String },
     Persist { key: String },
 }
@@ -95,6 +99,13 @@ impl Command {
                 }),
                 _ => Err(CommandError::WrongArity("EXPIRE")),
             },
+            "EXPIREAT" => match args.len() {
+                2 => Ok(Self::ExpireAt {
+                    key: bytes_to_string(args.remove(0))?,
+                    unix_seconds: parse_u64(args.remove(0))?,
+                }),
+                _ => Err(CommandError::WrongArity("EXPIREAT")),
+            },
             "TTL" => match args.len() {
                 1 => Ok(Self::Ttl {
                     key: bytes_to_string(args.remove(0))?,
@@ -131,8 +142,47 @@ impl Command {
             } else {
                 0
             }),
+            Self::ExpireAt { key, unix_seconds } => {
+                Frame::Integer(if store.expire_at_unix(&key, unix_seconds).await {
+                    1
+                } else {
+                    0
+                })
+            }
             Self::Ttl { key } => Frame::Integer(store.ttl(&key).await.as_redis_integer()),
             Self::Persist { key } => Frame::Integer(if store.persist(&key).await { 1 } else { 0 }),
+        }
+    }
+
+    pub fn to_aof_frame(&self) -> Option<Frame> {
+        match self {
+            Self::Set { key, value } => Some(Frame::Array(vec![
+                bulk("SET"),
+                Frame::Bulk(key.as_bytes().to_vec()),
+                Frame::Bulk(value.clone()),
+            ])),
+            Self::Del { keys } => Some(Frame::Array(
+                std::iter::once(bulk("DEL"))
+                    .chain(keys.iter().map(|key| Frame::Bulk(key.as_bytes().to_vec())))
+                    .collect(),
+            )),
+            Self::Expire { key, seconds } => Some(Frame::Array(vec![
+                bulk("EXPIREAT"),
+                Frame::Bulk(key.as_bytes().to_vec()),
+                Frame::Bulk(expiration_deadline(*seconds).to_string().into_bytes()),
+            ])),
+            Self::ExpireAt { key, unix_seconds } => Some(Frame::Array(vec![
+                bulk("EXPIREAT"),
+                Frame::Bulk(key.as_bytes().to_vec()),
+                Frame::Bulk(unix_seconds.to_string().into_bytes()),
+            ])),
+            Self::Persist { key } => Some(Frame::Array(vec![
+                bulk("PERSIST"),
+                Frame::Bulk(key.as_bytes().to_vec()),
+            ])),
+            Self::Ping(_) | Self::Echo(_) | Self::Get { .. } | Self::Exists { .. } | Self::Ttl { .. } => {
+                None
+            }
         }
     }
 }
@@ -159,6 +209,26 @@ fn parse_u64(bytes: Vec<u8>) -> Result<u64, CommandError> {
     bytes_to_string(bytes)?
         .parse()
         .map_err(|_| CommandError::InvalidInteger)
+}
+
+fn bulk(value: &str) -> Frame {
+    Frame::Bulk(value.as_bytes().to_vec())
+}
+
+fn expiration_deadline(seconds: u64) -> u64 {
+    let deadline = SystemTime::now()
+        .checked_add(Duration::from_secs(seconds))
+        .unwrap_or(SystemTime::now());
+
+    unix_seconds_ceil(deadline)
+}
+
+fn unix_seconds_ceil(time: SystemTime) -> u64 {
+    let Ok(duration) = time.duration_since(UNIX_EPOCH) else {
+        return 0;
+    };
+
+    duration.as_secs() + u64::from(duration.subsec_nanos() > 0)
 }
 
 #[cfg(test)]
@@ -209,6 +279,42 @@ mod tests {
                 key: "project".to_string(),
                 seconds: 30
             }
+        );
+    }
+
+    #[test]
+    fn parses_expireat_command() {
+        let frame = Frame::Array(vec![
+            Frame::Bulk(b"EXPIREAT".to_vec()),
+            Frame::Bulk(b"project".to_vec()),
+            Frame::Bulk(b"1780000000".to_vec()),
+        ]);
+
+        let command = Command::from_frame(frame).unwrap();
+
+        assert_eq!(
+            command,
+            Command::ExpireAt {
+                key: "project".to_string(),
+                unix_seconds: 1_780_000_000
+            }
+        );
+    }
+
+    #[test]
+    fn serializes_set_to_aof_frame() {
+        let command = Command::Set {
+            key: "project".to_string(),
+            value: b"ferrocache".to_vec(),
+        };
+
+        assert_eq!(
+            command.to_aof_frame(),
+            Some(Frame::Array(vec![
+                Frame::Bulk(b"SET".to_vec()),
+                Frame::Bulk(b"project".to_vec()),
+                Frame::Bulk(b"ferrocache".to_vec()),
+            ]))
         );
     }
 

@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    time::{Duration, Instant},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use tokio::sync::RwLock;
@@ -30,7 +30,7 @@ impl Ttl {
 #[derive(Debug, Clone)]
 struct Entry {
     value: Vec<u8>,
-    expires_at: Option<Instant>,
+    expires_at: Option<SystemTime>,
 }
 
 impl MemoryStore {
@@ -49,7 +49,7 @@ impl MemoryStore {
     }
 
     pub async fn get(&self, key: &str) -> Option<Vec<u8>> {
-        let now = Instant::now();
+        let now = SystemTime::now();
         let mut entries = self.entries.write().await;
         remove_if_expired(&mut entries, key, now);
 
@@ -57,7 +57,7 @@ impl MemoryStore {
     }
 
     pub async fn del(&self, keys: &[String]) -> usize {
-        let now = Instant::now();
+        let now = SystemTime::now();
         let mut entries = self.entries.write().await;
 
         keys.iter()
@@ -70,7 +70,7 @@ impl MemoryStore {
     }
 
     pub async fn exists(&self, keys: &[String]) -> usize {
-        let now = Instant::now();
+        let now = SystemTime::now();
         let mut entries = self.entries.write().await;
 
         keys.iter()
@@ -83,11 +83,26 @@ impl MemoryStore {
     }
 
     pub async fn expire(&self, key: &str, seconds: u64) -> bool {
-        let now = Instant::now();
+        let now = SystemTime::now();
+        let expires_at = now.checked_add(Duration::from_secs(seconds)).unwrap_or(now);
+
+        self.expire_at(key, expires_at).await
+    }
+
+    pub async fn expire_at_unix(&self, key: &str, unix_seconds: u64) -> bool {
+        let expires_at = UNIX_EPOCH
+            .checked_add(Duration::from_secs(unix_seconds))
+            .unwrap_or(SystemTime::now());
+
+        self.expire_at(key, expires_at).await
+    }
+
+    async fn expire_at(&self, key: &str, expires_at: SystemTime) -> bool {
+        let now = SystemTime::now();
         let mut entries = self.entries.write().await;
         remove_if_expired(&mut entries, key, now);
 
-        if seconds == 0 {
+        if expires_at <= now {
             return entries.remove(key).is_some();
         }
 
@@ -95,13 +110,12 @@ impl MemoryStore {
             return false;
         };
 
-        let expires_at = now.checked_add(Duration::from_secs(seconds)).unwrap_or(now);
         entry.expires_at = Some(expires_at);
         true
     }
 
     pub async fn ttl(&self, key: &str) -> Ttl {
-        let now = Instant::now();
+        let now = SystemTime::now();
         let mut entries = self.entries.write().await;
         remove_if_expired(&mut entries, key, now);
 
@@ -110,13 +124,17 @@ impl MemoryStore {
         };
 
         match entry.expires_at {
-            Some(expires_at) => Ttl::Seconds(expires_at.saturating_duration_since(now).as_secs()),
+            Some(expires_at) => Ttl::Seconds(
+                expires_at
+                    .duration_since(now)
+                    .map_or(0, |duration| duration.as_secs()),
+            ),
             None => Ttl::NoExpiration,
         }
     }
 
     pub async fn persist(&self, key: &str) -> bool {
-        let now = Instant::now();
+        let now = SystemTime::now();
         let mut entries = self.entries.write().await;
         remove_if_expired(&mut entries, key, now);
 
@@ -133,7 +151,7 @@ impl MemoryStore {
     }
 
     pub async fn cleanup_expired(&self) -> usize {
-        let now = Instant::now();
+        let now = SystemTime::now();
         let mut entries = self.entries.write().await;
         let before = entries.len();
 
@@ -143,14 +161,14 @@ impl MemoryStore {
     }
 }
 
-fn remove_if_expired(entries: &mut HashMap<String, Entry>, key: &str, now: Instant) {
+fn remove_if_expired(entries: &mut HashMap<String, Entry>, key: &str, now: SystemTime) {
     if entries.get(key).is_some_and(|entry| entry.is_expired(now)) {
         entries.remove(key);
     }
 }
 
 impl Entry {
-    fn is_expired(&self, now: Instant) -> bool {
+    fn is_expired(&self, now: SystemTime) -> bool {
         self.expires_at.is_some_and(|expires_at| expires_at <= now)
     }
 }
@@ -182,6 +200,18 @@ mod tests {
         assert!(store.expire("project", 0).await);
         assert_eq!(store.get("project").await, None);
         assert_eq!(store.ttl("project").await, Ttl::Missing);
+    }
+
+    #[tokio::test]
+    async fn expire_at_past_deletes_key() {
+        let store = MemoryStore::new();
+
+        store
+            .set("project".to_string(), b"ferrocache".to_vec())
+            .await;
+
+        assert!(store.expire_at_unix("project", 0).await);
+        assert_eq!(store.get("project").await, None);
     }
 
     #[tokio::test]
