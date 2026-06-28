@@ -402,16 +402,14 @@ mod tests {
 
         assert_eq!(
             store
-                .rpush(
-                    "events".to_string(),
-                    vec![b"one".to_vec(), b"two".to_vec()]
-                )
+                .rpush("events".to_string(), vec![b"one".to_vec(), b"two".to_vec()])
                 .await
                 .unwrap(),
             2
         );
         assert_eq!(
-            store.lpush("events".to_string(), vec![b"zero".to_vec()])
+            store
+                .lpush("events".to_string(), vec![b"zero".to_vec()])
                 .await
                 .unwrap(),
             3
@@ -432,10 +430,13 @@ mod tests {
     async fn list_commands_reject_string_values() {
         let store = MemoryStore::new();
 
-        store.set("project".to_string(), b"aerugo-cache".to_vec()).await;
+        store
+            .set("project".to_string(), b"aerugo-cache".to_vec())
+            .await;
 
         assert_eq!(
-            store.lpush("project".to_string(), vec![b"event".to_vec()])
+            store
+                .lpush("project".to_string(), vec![b"event".to_vec()])
                 .await
                 .unwrap_err(),
             StoreError::WrongType

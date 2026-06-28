@@ -169,19 +169,20 @@ impl Command {
             }),
             Self::Del { keys } => Ok(Frame::Integer(store.del(&keys).await as i64)),
             Self::Exists { keys } => Ok(Frame::Integer(store.exists(&keys).await as i64)),
-            Self::Expire { key, seconds } => Ok(Frame::Integer(if store.expire(&key, seconds).await {
-                1
-            } else {
-                0
-            })),
-            Self::ExpireAt { key, unix_seconds } => Ok(Frame::Integer(if store
-                .expire_at_unix(&key, unix_seconds)
-                .await
-            {
-                1
-            } else {
-                0
-            })),
+            Self::Expire { key, seconds } => {
+                Ok(Frame::Integer(if store.expire(&key, seconds).await {
+                    1
+                } else {
+                    0
+                }))
+            }
+            Self::ExpireAt { key, unix_seconds } => Ok(Frame::Integer(
+                if store.expire_at_unix(&key, unix_seconds).await {
+                    1
+                } else {
+                    0
+                },
+            )),
             Self::Ttl { key } => Ok(Frame::Integer(store.ttl(&key).await.as_redis_integer())),
             Self::Persist { key } => Ok(Frame::Integer(if store.persist(&key).await {
                 1

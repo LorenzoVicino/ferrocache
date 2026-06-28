@@ -62,14 +62,12 @@ impl Aof {
 
         while let Some(frame) = read_frame(&mut reader).await? {
             match Command::from_frame(frame) {
-                Ok(command) => {
-                    match command.execute(Arc::clone(&store)).await {
-                        Ok(_) => count += 1,
-                        Err(error) => {
-                            warn!(%error, "skipping failed command during AOF replay");
-                        }
+                Ok(command) => match command.execute(Arc::clone(&store)).await {
+                    Ok(_) => count += 1,
+                    Err(error) => {
+                        warn!(%error, "skipping failed command during AOF replay");
                     }
-                }
+                },
                 Err(error) => {
                     warn!(%error, "skipping invalid command during AOF replay");
                 }
