@@ -7,4 +7,3 @@ pub enum Frame {
     Null,
     Array(Vec<Frame>),
 }
-

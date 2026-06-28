@@ -126,13 +126,13 @@ impl Command {
             },
             Self::Del { keys } => Frame::Integer(store.del(&keys).await as i64),
             Self::Exists { keys } => Frame::Integer(store.exists(&keys).await as i64),
-            Self::Expire { key, seconds } => {
-                Frame::Integer(if store.expire(&key, seconds).await { 1 } else { 0 })
-            }
+            Self::Expire { key, seconds } => Frame::Integer(if store.expire(&key, seconds).await {
+                1
+            } else {
+                0
+            }),
             Self::Ttl { key } => Frame::Integer(store.ttl(&key).await.as_redis_integer()),
-            Self::Persist { key } => {
-                Frame::Integer(if store.persist(&key).await { 1 } else { 0 })
-            }
+            Self::Persist { key } => Frame::Integer(if store.persist(&key).await { 1 } else { 0 }),
         }
     }
 }

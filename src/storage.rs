@@ -151,8 +151,7 @@ fn remove_if_expired(entries: &mut HashMap<String, Entry>, key: &str, now: Insta
 
 impl Entry {
     fn is_expired(&self, now: Instant) -> bool {
-        self.expires_at
-            .is_some_and(|expires_at| expires_at <= now)
+        self.expires_at.is_some_and(|expires_at| expires_at <= now)
     }
 }
 
@@ -164,7 +163,9 @@ mod tests {
     async fn set_get_and_exists_work() {
         let store = MemoryStore::new();
 
-        store.set("project".to_string(), b"ferrocache".to_vec()).await;
+        store
+            .set("project".to_string(), b"ferrocache".to_vec())
+            .await;
 
         assert_eq!(store.get("project").await, Some(b"ferrocache".to_vec()));
         assert_eq!(store.exists(&["project".to_string()]).await, 1);
@@ -174,7 +175,9 @@ mod tests {
     async fn expire_zero_deletes_key() {
         let store = MemoryStore::new();
 
-        store.set("project".to_string(), b"ferrocache".to_vec()).await;
+        store
+            .set("project".to_string(), b"ferrocache".to_vec())
+            .await;
 
         assert!(store.expire("project", 0).await);
         assert_eq!(store.get("project").await, None);
@@ -187,7 +190,9 @@ mod tests {
 
         assert_eq!(store.ttl("missing").await, Ttl::Missing);
 
-        store.set("project".to_string(), b"ferrocache".to_vec()).await;
+        store
+            .set("project".to_string(), b"ferrocache".to_vec())
+            .await;
 
         assert_eq!(store.ttl("project").await, Ttl::NoExpiration);
     }
@@ -196,7 +201,9 @@ mod tests {
     async fn persist_removes_expiration() {
         let store = MemoryStore::new();
 
-        store.set("project".to_string(), b"ferrocache".to_vec()).await;
+        store
+            .set("project".to_string(), b"ferrocache".to_vec())
+            .await;
         assert!(store.expire("project", 60).await);
         assert!(store.persist("project").await);
         assert_eq!(store.ttl("project").await, Ttl::NoExpiration);

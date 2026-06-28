@@ -27,4 +27,3 @@ async fn main() -> std::io::Result<()> {
 
     run(ServerConfig { addr }).await
 }
-
