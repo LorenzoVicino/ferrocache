@@ -180,9 +180,11 @@ impl Command {
                 bulk("PERSIST"),
                 Frame::Bulk(key.as_bytes().to_vec()),
             ])),
-            Self::Ping(_) | Self::Echo(_) | Self::Get { .. } | Self::Exists { .. } | Self::Ttl { .. } => {
-                None
-            }
+            Self::Ping(_)
+            | Self::Echo(_)
+            | Self::Get { .. }
+            | Self::Exists { .. }
+            | Self::Ttl { .. } => None,
         }
     }
 }

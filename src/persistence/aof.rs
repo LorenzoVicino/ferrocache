@@ -1,7 +1,4 @@
-use std::{
-    path::Path,
-    sync::Arc,
-};
+use std::{path::Path, sync::Arc};
 
 use tokio::{
     fs::{self, File, OpenOptions},
