@@ -1,0 +1,17 @@
+[package]
+name = "ferrocache"
+version = "0.1.0"
+edition = "2021"
+description = "A small Redis-compatible in-memory cache written in Rust."
+license = "MIT"
+readme = "README.md"
+keywords = ["redis", "cache", "tokio", "database", "learning"]
+categories = ["command-line-utilities", "database-implementations"]
+
+[dependencies]
+clap = { version = "4.5", features = ["derive", "env"] }
+thiserror = "2.0"
+tokio = { version = "1.38", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
